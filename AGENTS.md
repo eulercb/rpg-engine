@@ -74,7 +74,9 @@ new action (e.g. `cast_spell`) touches a known set of spots. Do all of them:
    state, return a result.
 5. `narrator.ts` — handle the new result shape in `mockNarrate` (`llmNarrate` is
    generic and needs no change).
-6. `demo.ts` — add an input that exercises it, including a rejection path.
+6. `demo.ts` — exercise it by playing the interactive loop (type the intent and
+   watch it run end-to-end); an illegal attempt should still surface a clean,
+   player-facing rejection rather than a raw error.
 
 The `switch` statements are intentionally exhaustive with no `default`, so
 TypeScript will flag every place you forgot. Trust the compiler here.

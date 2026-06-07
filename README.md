@@ -13,22 +13,26 @@ free text ──▶ interpret ──▶ validate ──▶ resolve ──▶ nar
                        projection of state
 ```
 
-## Run the offline demo (no API key)
+## Run the demo (no API key)
 
 ```bash
 npm install
 npm run demo
 ```
 
-It drives four free-text inputs through the loop using a keyword-matching mock
-interpreter and a deterministic narrator, printing each layer's output —
-including one input the validator rejects (a second attack in the same turn)
-and one the rules don't cover (kicking a table over), which routes through the
-`freeform` escape hatch.
+It drops you into an interactive one-on-one duel. You type what you do in plain
+words ("I swing my longsword at the goblin"); the keyword-matching mock
+interpreter turns it into a structured `weapon_attack`, code validates and
+resolves the 5e math, and a deterministic narrator describes the result — then
+the goblin takes its own turn and strikes back. Every layer's output is printed,
+so the whole interpret → validate → resolve → narrate pipeline stays visible. The
+fight ends when the player or the goblin drops to 0 HP (type `quit` to break it
+off). For now the only action is attacking.
 
 The demo picks its interpreter + narrator from the `RPG_LLM` env var
 (`mock` by default). Nothing else changes between backends — the engine,
-validator, and resolver are identical.
+validator, and resolver are identical. The fight is seed-reproducible; set
+`RPG_SEED` to roll a different one.
 
 ## Go live with Claude
 
@@ -109,7 +113,7 @@ tag, not a community quant.)
 | `resolver.ts`    | Deterministic 5e math; mutates state; returns the truth             |
 | `narrator.ts`    | Result → prose. `llmNarrate` (Claude) / `localNarrate` (Ollama) + `mockNarrate` |
 | `engine.ts`      | Wires the four layers; returns a full per-layer trace               |
-| `demo.ts`        | Runnable example                                                    |
+| `demo.ts`        | Interactive duel: reads your input, runs the loop until someone drops |
 
 ## Design rules baked in
 
