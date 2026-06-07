@@ -38,6 +38,12 @@ export const mockNarrate: Narrator = async (result, state) => {
   return `${prefix}${actor} makes a ${label} check and ${outcome}. [${result.total} vs DC ${result.dc}]`;
 };
 
+// Shared instruction for every real narrator. The narrator's whole job is to
+// reword the resolved truth, never contradict it — so this prompt is the single
+// place that constraint lives, and the Claude and local paths stay in lockstep.
+const NARRATOR_SYSTEM =
+  "You narrate the outcome of one D&D action in 1-2 vivid sentences. You are given the resolved mechanical truth as JSON. Honour every number and the hit/success outcome exactly; never change what happened. Do not invent new mechanics or rolls.";
+
 // Real narrator. Lazy SDK import; falls back to the mock on any failure so the
 // game never stalls on a narration call.
 export const llmNarrate: Narrator = async (result, state) => {
@@ -48,12 +54,37 @@ export const llmNarrate: Narrator = async (result, state) => {
     const msg = await client.messages.create({
       model,
       max_tokens: 200,
-      system:
-        "You narrate the outcome of one D&D action in 1-2 vivid sentences. You are given the resolved mechanical truth as JSON. Honour every number and the hit/success outcome exactly; never change what happened. Do not invent new mechanics or rolls.",
+      system: NARRATOR_SYSTEM,
       messages: [{ role: "user", content: JSON.stringify(result) }],
     });
     const text = msg.content.find((b: any) => b.type === "text") as any;
     return text?.text ?? (await mockNarrate(result, state));
+  } catch {
+    return mockNarrate(result, state);
+  }
+};
+
+// Local narrator. Same contract as llmNarrate, against any OpenAI-compatible
+// server (Ollama by default). Narration needs no tool calling, so this works
+// with ANY chat model — including ones whose tool support is too shaky for the
+// interpreter. Falls back to the mock on any failure, same as the Claude path.
+export const localNarrate: Narrator = async (result, state) => {
+  try {
+    const { default: OpenAI } = await import("openai");
+    const client = new OpenAI({
+      baseURL: process.env.LOCAL_LLM_BASE_URL ?? "http://localhost:11434/v1",
+      apiKey: process.env.LOCAL_LLM_API_KEY ?? "ollama", // Ollama ignores it; the SDK requires a value
+    });
+    const model = process.env.LOCAL_NARRATOR_MODEL ?? process.env.LOCAL_LLM_MODEL ?? "gemma4:26b";
+    const res = await client.chat.completions.create({
+      model,
+      max_tokens: 200,
+      messages: [
+        { role: "system", content: NARRATOR_SYSTEM },
+        { role: "user", content: JSON.stringify(result) },
+      ],
+    });
+    return res.choices[0]?.message?.content ?? (await mockNarrate(result, state));
   } catch {
     return mockNarrate(result, state);
   }

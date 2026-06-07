@@ -26,22 +26,57 @@ including one input the validator rejects (a second attack in the same turn)
 and one the rules don't cover (kicking a table over), which routes through the
 `freeform` escape hatch.
 
+The demo picks its interpreter + narrator from the `RPG_LLM` env var
+(`mock` by default). Nothing else changes between backends — the engine,
+validator, and resolver are identical.
+
 ## Go live with Claude
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
 export ANTHROPIC_MODEL=claude-haiku-4-5-20251001   # optional
+npm run demo:claude                                # = RPG_LLM=claude npm run demo
 ```
 
-In `src/demo.ts`, swap the deps:
+## Run against a local model (Ollama)
 
-```ts
-import { llmInterpret } from "./interpreter";
-import { llmNarrate } from "./narrator";
-const deps = { interpret: llmInterpret, narrate: llmNarrate, rng: mulberry32(Date.now()) };
+The simplest way to run a model locally is [Ollama](https://ollama.com): it
+downloads/manages models and serves an **OpenAI-compatible API** on
+`localhost:11434`, which is exactly what the local backend here talks to (via
+the `openai` SDK pointed at that base URL).
+
+```bash
+ollama pull gemma4:26b        # download the model (~18 GB)
+ollama serve                  # start the server (often already running)
+npm run demo:local            # = RPG_LLM=local npm run demo
 ```
 
-Nothing else changes — the engine, validator, and resolver are identical.
+Configure it with env vars (all optional):
+
+| Variable                 | Default                       | Purpose                                            |
+|--------------------------|-------------------------------|----------------------------------------------------|
+| `LOCAL_LLM_BASE_URL`     | `http://localhost:11434/v1`   | Any OpenAI-compatible server (llama.cpp, LM Studio, vLLM) |
+| `LOCAL_LLM_MODEL`        | `gemma4:26b`                  | Model used for both edges unless overridden        |
+| `LOCAL_INTERPRETER_MODEL`| — (falls back to `LOCAL_LLM_MODEL`) | Override just the interpreter's model         |
+| `LOCAL_NARRATOR_MODEL`   | — (falls back to `LOCAL_LLM_MODEL`) | Override just the narrator's model            |
+| `LOCAL_LLM_API_KEY`      | `ollama`                      | Ignored by Ollama; set it for servers that require a key |
+
+**The one requirement: the interpreter needs a tool-calling model.** The
+interpreter forces a structured tool call (the project's core invariant); the
+narrator just writes prose and works with any chat model. `gemma4:26b` supports
+tool calling, but Gemma's tool support via Ollama has rough edges (keep Ollama
+current, use the official tag, and disable "thinking" mode for the interpreter).
+If your model's tool calls prove flaky, point **only the interpreter** at a model
+with battle-tested tool support and keep your model for narration:
+
+```bash
+export LOCAL_INTERPRETER_MODEL=llama3.1:8b   # solid tool calling
+export LOCAL_NARRATOR_MODEL=gemma4:26b       # any chat model is fine here
+npm run demo:local
+```
+
+Because it speaks the OpenAI wire format, swapping Ollama for llama.cpp,
+LM Studio, or vLLM is just a different `LOCAL_LLM_BASE_URL`.
 
 ## Files
 
@@ -50,10 +85,10 @@ Nothing else changes — the engine, validator, and resolver are identical.
 | `types.ts`       | Action union, 5e tables (skills→abilities, DC bands), result shapes |
 | `dice.ts`        | Seedable RNG; d20 with advantage; damage expressions                |
 | `state.ts`       | Authoritative game state + sample encounter                         |
-| `interpreter.ts` | Free text → Action. `llmInterpret` (tool calling) + `mockInterpret` |
+| `interpreter.ts` | Free text → Action. `llmInterpret` (Claude) / `localInterpret` (Ollama) tool calling + `mockInterpret` |
 | `validator.ts`   | Is this action legal for this character/state?                      |
 | `resolver.ts`    | Deterministic 5e math; mutates state; returns the truth             |
-| `narrator.ts`    | Result → prose. `llmNarrate` + `mockNarrate`                        |
+| `narrator.ts`    | Result → prose. `llmNarrate` (Claude) / `localNarrate` (Ollama) + `mockNarrate` |
 | `engine.ts`      | Wires the four layers; returns a full per-layer trace               |
 | `demo.ts`        | Runnable example                                                    |
 
