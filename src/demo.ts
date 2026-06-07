@@ -1,17 +1,34 @@
 // ---------------------------------------------------------------------------
 // demo.ts
-// Runs the loop end-to-end with the OFFLINE interpreter + narrator so you can
-// see all four layers without an API key. Swap in llmInterpret / llmNarrate
-// (and set ANTHROPIC_API_KEY) to go live.
+// Runs the loop end-to-end. Defaults to the OFFLINE interpreter + narrator so
+// you can see all four layers with no API key and no network. Pick a live
+// backend with the RPG_LLM env var:
 //
-//   npx tsx src/demo.ts
+//   npx tsx src/demo.ts                 # mock   (default; offline)
+//   RPG_LLM=local  npx tsx src/demo.ts  # local OpenAI-compatible server (Ollama)
+//   RPG_LLM=claude npx tsx src/demo.ts  # Anthropic API (needs ANTHROPIC_API_KEY)
 // ---------------------------------------------------------------------------
 
 import { sampleState, advanceTurn } from "./state";
 import { mulberry32 } from "./dice";
-import { mockInterpret /*, llmInterpret */ } from "./interpreter";
-import { mockNarrate /*, llmNarrate */ } from "./narrator";
+import { mockInterpret, llmInterpret, localInterpret, type Interpreter } from "./interpreter";
+import { mockNarrate, llmNarrate, localNarrate, type Narrator } from "./narrator";
 import { runTurn, type TurnTrace } from "./engine";
+
+// Backend selection. Defaults to the offline mock so `npm run demo` always runs
+// with no key and no network. The SDKs behind the live paths are imported
+// lazily inside their functions, so naming them here costs nothing until used.
+const BACKEND = process.env.RPG_LLM ?? "mock";
+const INTERPRETERS: Record<string, Interpreter> = {
+  mock: mockInterpret,
+  local: localInterpret,
+  claude: llmInterpret,
+};
+const NARRATORS: Record<string, Narrator> = {
+  mock: mockNarrate,
+  local: localNarrate,
+  claude: llmNarrate,
+};
 
 function printTrace(t: TurnTrace) {
   console.log(`\nPLAYER: ${t.input}`);
@@ -36,8 +53,11 @@ function printTrace(t: TurnTrace) {
 
 async function main() {
   const state = sampleState();
-  const deps = { interpret: mockInterpret, narrate: mockNarrate, rng: mulberry32(20260607) };
+  const interpret = INTERPRETERS[BACKEND] ?? mockInterpret;
+  const narrate = NARRATORS[BACKEND] ?? mockNarrate;
+  const deps = { interpret, narrate, rng: mulberry32(20260607) };
 
+  console.log(`(LLM backend: ${BACKEND})`);
   console.log("=== Thorin's turn (round 1) ===");
 
   // A clean weapon attack -> weapon_attack tool.

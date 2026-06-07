@@ -114,6 +114,12 @@ Choices that can look arbitrary but are deliberate:
 - **Interpreter and narrator default to a fast/cheap model.** Mechanical truth
   doesn't depend on model quality (it's in code), so spend tokens on judgement,
   not math.
+- **Three backends, one signature.** Alongside Claude (`llm*`) and the offline
+  mock there is a local/OpenAI-compatible path (`localInterpret`/`localNarrate`,
+  Ollama by default). It exists to keep the project provider-agnostic, and it
+  obeys the same invariants — notably it forces `tool_choice: "required"`, so a
+  **local interpreter model must support tool calling** (the narrator can be any
+  chat model). When changing one real path, change the others to match (#8).
 
 ## When in doubt
 

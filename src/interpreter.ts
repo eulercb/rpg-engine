@@ -142,6 +142,64 @@ export const llmInterpret: Interpreter = async (input, state, actorId) => {
 };
 
 // ---------------------------------------------------------------------------
+// Local interpreter. Same contract and same grounding as llmInterpret, but
+// talks to any OpenAI-compatible server (Ollama by default; also llama.cpp,
+// LM Studio, vLLM — switch by changing LOCAL_LLM_BASE_URL). The one hard
+// requirement is that the model supports TOOL CALLING: we force a tool call
+// (tool_choice "required") to keep output structured, never prose. SDK is
+// imported lazily so the offline demo needs neither the dep nor a server.
+// ---------------------------------------------------------------------------
+
+// The same TOOLS, reshaped into OpenAI's function-tool envelope. The schemas
+// stay the single source of truth; only the wrapper differs from Anthropic.
+const OPENAI_TOOLS = TOOLS.map((t) => ({
+  type: "function" as const,
+  function: { name: t.name, description: t.description, parameters: t.input_schema },
+}));
+
+export const localInterpret: Interpreter = async (input, state, actorId) => {
+  const { default: OpenAI } = await import("openai");
+  const client = new OpenAI({
+    baseURL: process.env.LOCAL_LLM_BASE_URL ?? "http://localhost:11434/v1",
+    apiKey: process.env.LOCAL_LLM_API_KEY ?? "ollama", // Ollama ignores it; the SDK requires a value
+  });
+  const model = process.env.LOCAL_INTERPRETER_MODEL ?? process.env.LOCAL_LLM_MODEL ?? "gemma4:26b";
+
+  const context = buildContext(state, actorId);
+  const res = await client.chat.completions.create({
+    model,
+    max_tokens: 512,
+    tools: OPENAI_TOOLS as any,
+    tool_choice: "required", // force a tool call (OpenAI's equivalent of Anthropic's {type:"any"})
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `CONTEXT:\n${JSON.stringify(context, null, 2)}\n\nPLAYER SAYS: "${input}"`,
+      },
+    ],
+  });
+
+  const message: any = res.choices[0]?.message;
+  const call: any = message?.tool_calls?.[0];
+  if (!call) {
+    // Some local models (notably Gemma via Ollama) reply with prose — or leak the
+    // tool-call JSON into `content` — instead of a parsed tool call. Surface what
+    // they said so the failure is diagnosable, and fail loudly: we never scrape a
+    // tool call out of free text (invariant: structured tool calls only).
+    const said = String(message?.content ?? "").trim();
+    throw new Error(
+      "Local model did not return a tool call" +
+        (said ? `; it replied with text instead: ${JSON.stringify(said.slice(0, 200))}` : "") +
+        '. The interpreter needs a tool-calling model — see the README "Run against a local model" notes.',
+    );
+  }
+  // OpenAI returns tool arguments as a JSON *string*; Anthropic returned a parsed object.
+  const args = call.function?.arguments ? JSON.parse(call.function.arguments) : {};
+  return toAction(call.function.name, args);
+};
+
+// ---------------------------------------------------------------------------
 // Offline mock. Crude keyword matching — enough to drive the full loop without
 // a network call. Swap llmInterpret in for the real thing.
 // ---------------------------------------------------------------------------
