@@ -180,8 +180,20 @@ export const localInterpret: Interpreter = async (input, state, actorId) => {
     ],
   });
 
-  const call: any = res.choices[0]?.message?.tool_calls?.[0];
-  if (!call) throw new Error("Local model did not return a tool call.");
+  const message: any = res.choices[0]?.message;
+  const call: any = message?.tool_calls?.[0];
+  if (!call) {
+    // Some local models (notably Gemma via Ollama) reply with prose — or leak the
+    // tool-call JSON into `content` — instead of a parsed tool call. Surface what
+    // they said so the failure is diagnosable, and fail loudly: we never scrape a
+    // tool call out of free text (invariant: structured tool calls only).
+    const said = String(message?.content ?? "").trim();
+    throw new Error(
+      "Local model did not return a tool call" +
+        (said ? `; it replied with text instead: ${JSON.stringify(said.slice(0, 200))}` : "") +
+        '. The interpreter needs a tool-calling model — see the README "Run against a local model" notes.',
+    );
+  }
   // OpenAI returns tool arguments as a JSON *string*; Anthropic returned a parsed object.
   const args = call.function?.arguments ? JSON.parse(call.function.arguments) : {};
   return toAction(call.function.name, args);

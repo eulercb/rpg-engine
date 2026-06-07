@@ -57,8 +57,9 @@ export const llmNarrate: Narrator = async (result, state) => {
       system: NARRATOR_SYSTEM,
       messages: [{ role: "user", content: JSON.stringify(result) }],
     });
-    const text = msg.content.find((b: any) => b.type === "text") as any;
-    return text?.text ?? (await mockNarrate(result, state));
+    const block = msg.content.find((b: any) => b.type === "text") as any;
+    const text = block?.text?.trim();
+    return text ? text : await mockNarrate(result, state);
   } catch {
     return mockNarrate(result, state);
   }
@@ -84,7 +85,11 @@ export const localNarrate: Narrator = async (result, state) => {
         { role: "user", content: JSON.stringify(result) },
       ],
     });
-    return res.choices[0]?.message?.content ?? (await mockNarrate(result, state));
+    // Some local models (notably Gemma 4 via Ollama's /v1 endpoint) return empty
+    // content with the text in a separate reasoning field; treat empty/whitespace
+    // as a miss and fall back to the deterministic mock rather than print nothing.
+    const text = res.choices[0]?.message?.content?.trim();
+    return text ? text : await mockNarrate(result, state);
   } catch {
     return mockNarrate(result, state);
   }

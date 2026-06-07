@@ -78,6 +78,25 @@ npm run demo:local
 Because it speaks the OpenAI wire format, swapping Ollama for llama.cpp,
 LM Studio, or vLLM is just a different `LOCAL_LLM_BASE_URL`.
 
+### Troubleshooting: `gemma4` returns no tool call / empty narration
+
+As of mid-2026, `gemma4:26b` is unreliable through Ollama's OpenAI-compatible
+(`/v1`) endpoint, due to bugs in Ollama — not in this code:
+
+- `/v1` returns **empty `content`** with the text in a separate reasoning field,
+  and `think=false` isn't honored there ([ollama#15288](https://github.com/ollama/ollama/issues/15288)).
+- the tool-call parser **drops `tool_calls`** when a system prompt + tools are
+  combined ([ollama#15539](https://github.com/ollama/ollama/issues/15539)), and the
+  MoE build returns empty responses on system prompts over ~500 chars
+  ([ollama#15428](https://github.com/ollama/ollama/issues/15428)).
+
+The narrator now falls back to the deterministic mock on empty replies, and the
+interpreter fails with a message showing what the model returned. For a reliable
+local run, point the **interpreter** at a model with battle-tested Ollama tool
+support — `llama3.1:8b` or `qwen2.5:7b` — which is what `LOCAL_INTERPRETER_MODEL`
+is for. (Make sure Ollama is on its latest version and you're using the official
+tag, not a community quant.)
+
 ## Files
 
 | File             | Layer / role                                                        |
