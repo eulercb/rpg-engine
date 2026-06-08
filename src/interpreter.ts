@@ -85,12 +85,19 @@ const TOOLS = [
   },
 ];
 
-const SYSTEM_PROMPT = `You are the rules interpreter for a D&D 5e game. Convert the player's free-text intent into exactly ONE tool call.
-Rules:
-- Choose weapon_attack or ability_check when the intent maps cleanly to them.
-- Use only target ids and weapon ids present in the provided context. Never invent capabilities.
-- If the intent fits nothing else, use freeform_action and PROPOSE an ability and difficulty band. You never set DCs or roll dice — the engine does.
-- Do not narrate outcomes. Emit the tool call only.`;
+// The local-model failure mode (see the README's Ollama notes) is replying with
+// prose, or with the tool-call JSON pasted into the text body, instead of an
+// actual structured tool call. So this prompt leads with "tool call only," names
+// the expected arguments, and makes weapon_attack the explicit default for any
+// combat phrasing — which is the whole demo right now.
+const SYSTEM_PROMPT = `You are the rules interpreter for a D&D 5e combat encounter. Turn the player's free-text intent into EXACTLY ONE tool call. Reply with the tool call only — never prose, and never JSON written into your text reply.
+
+Choosing the tool:
+- weapon_attack(target_id, weapon_id): the default in a fight. ANY phrasing of striking an enemy — attack, swing, slash, stab, hit, shoot, lunge, "cut it down" — is a weapon_attack. Take target_id from visible_targets and weapon_id from weapons_in_hand.
+- ability_check(ability, skill?): a deliberate non-combat attempt that maps cleanly to one ability/skill.
+- freeform_action(...): only when nothing else fits; PROPOSE an ability and a difficulty band and let the engine set the DC and roll.
+
+Use only the ids present in the CONTEXT — never invent weapons, targets, or capabilities. You never set DCs, roll dice, decide hits, or narrate outcomes. Emit the single tool call only.`;
 
 function toAction(toolName: string, input: any): Action {
   switch (toolName) {
@@ -210,7 +217,7 @@ export const mockInterpret: Interpreter = async (input, state, actorId) => {
   const target = ctx.visible_targets[0]?.id ?? "goblin";
 
   const weaponHit = ctx.self.weapons_in_hand.find((w) => text.includes(w));
-  if (/\b(attack|swing|strike|hit|slash|stab|shoot)\b/.test(text)) {
+  if (/\b(attack|swing|strike|hit|slash|stab|shoot|bash|chop|cut|thrust|hack|lunge|jab|smash|fire|loose|kill|charge)\b/.test(text)) {
     return { kind: "weapon_attack", target_id: target, weapon_id: weaponHit ?? ctx.self.weapons_in_hand[0] };
   }
   if (/recall|remember|know|knowledge|lore/.test(text)) {

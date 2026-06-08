@@ -22,11 +22,40 @@ export interface TurnDeps {
 
 // Full trace of one turn, so every layer's output is inspectable.
 export interface TurnTrace {
+  actorId: string;
   input: string;
   action: Action;
   validation: ValidationResult;
   result?: ResolutionResult;
   narration: string;
+}
+
+// validate -> resolve -> narrate for an action that has ALREADY been chosen.
+// The player path reaches this via runTurn (after the LLM interprets free text);
+// an NPC reaches it directly, with an action picked by code instead of a model.
+// Either way the action runs the same validator and resolver — the interpreter
+// is the only layer an NPC skips, and the mechanical truth is owned by code
+// regardless of who proposed the action.
+export async function resolveAction(
+  state: GameState,
+  actorId: string,
+  input: string,
+  action: Action,
+  deps: { narrate: Narrator; rng: RNG },
+): Promise<TurnTrace> {
+  // validate: is it legal for this character in this state?
+  const validation = validate(state, actorId, action);
+  if (!validation.ok) {
+    return { actorId, input, action, validation, narration: `You can't do that: ${validation.reason}` };
+  }
+
+  // resolve: deterministic 5e math, mutates state, returns the truth
+  const result = resolve(state, actorId, validation.action, deps.rng);
+
+  // narrate: reword the truth, never contradict it
+  const narration = await deps.narrate(result, state);
+
+  return { actorId, input, action, validation, result, narration };
 }
 
 export async function runTurn(
@@ -35,20 +64,7 @@ export async function runTurn(
   input: string,
   deps: TurnDeps,
 ): Promise<TurnTrace> {
-  // 1. interpret: free text -> structured action
+  // interpret: free text -> structured action, then run the rest of the pipeline
   const action = await deps.interpret(input, state, actorId);
-
-  // 2. validate: is it legal for this character in this state?
-  const validation = validate(state, actorId, action);
-  if (!validation.ok) {
-    return { input, action, validation, narration: `You can't do that: ${validation.reason}` };
-  }
-
-  // 3. resolve: deterministic 5e math, mutates state, returns the truth
-  const result = resolve(state, actorId, validation.action, deps.rng);
-
-  // 4. narrate: reword the truth, never contradict it
-  const narration = await deps.narrate(result, state);
-
-  return { input, action, validation, result, narration };
+  return resolveAction(state, actorId, input, action, deps);
 }
